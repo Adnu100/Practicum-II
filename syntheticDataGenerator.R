@@ -3,42 +3,19 @@ source("syntheticDataGeneratorConfiguration.R")
 
 install_if_missing("charlatan")
 
+binaryProbabilityVector <- function(prob1) {
+  c(prob1, 1 - prob1)
+}
+
+randomGenerator <- function(total) {
+  function(x, prob = NULL) {
+    sample(x, total, replace = TRUE, prob = prob)
+  }
+}
+
 createSyntheticData <- function(transactions) {
-  descriptions <- vapply(seq_len(transactions), function(i) {
-    toupper(ch_company())
-  }, character(1))
-  
-  dates <- sample(
-    seq(from = generator.date.start, to = generator.date.end, by = "day"),
-    transactions,
-    replace = TRUE
-  )
-  
-  accountNumber <- sample(
-    replicate(
-      generator.transaction.accounts,
-      paste0(sample(1:9, 10, replace = TRUE), collapse = "")
-    ),
-    transactions,
-    replace = TRUE
-  )
-  
-  card <- sample(generator.card.providers, transactions, replace = TRUE)
-  
-  categoryMap <- list(
-    Travel  = c("Airfare", "Ground Transport", "Car Rental", "Tolls & Parking"),
-    Lodging = c("Hotel", "Serviced Apartment"),
-    Meals   = c("Restaurants", "Coffee & Snacks", "Room Service"),
-    Office  = c("Supplies", "Printing", "Shipping"),
-    Telecom = c("Mobile", "Internet"),
-    Retail  = c("Electronics", "General Merchandise"),
-    Fuel    = c("Gasoline", "EV Charging")
-  )
-  
-  categories  <- names(categoryMap)
-  category    <- sample(
-    generator.transaction.categories, transactions, replace = TRUE
-  )
+  random <- randomGenerator(transactions)
+  category <- random(generator.transaction.categories)
   subcategory <- vapply(
     category,
     function(cat) {
@@ -46,24 +23,6 @@ createSyntheticData <- function(transactions) {
     },
     character(1)
   )
-  
-  currency <- sample(
-    generator.currencies,
-    transactions,
-    replace = TRUE,
-    prob = generator.currencies.probabilities
-  )
-  
-  billable <- sample(
-    c("Y", "N"),
-    transactions,
-    replace = TRUE,
-    prob = c(
-      generator.transaction.billable.probability,
-      1 - generator.transaction.billable.probability
-    )
-  )
-  
   amount <- round(
     runif(
       transactions,
@@ -71,33 +30,40 @@ createSyntheticData <- function(transactions) {
       max = generator.transaction.amount.max
     ), 2
   )
-  signs <- sample(
+  signs <- random(
     c(1, -1),
-    transactions,
-    replace = TRUE,
-    prob = c(
-      generator.transaction.credit.probability,
-      1 - generator.transaction.credit.probability
-    )
+    prob = binaryProbabilityVector(generator.transaction.credit.probability)
   )
-  
-  data.frame(
-    transaction_date = format(dates, "%m/%d/%Y"),
-    description = descriptions,
-    amount = amount * signs,
-    credit_card = card,
-    category = category,
-    subcategory = subcategory,
-    currency = currency,
-    billable = billable,
-    account_number = accountNumber,
-    stringsAsFactors = FALSE
+  setNames(
+    data.frame(
+      random(seq(generator.date.start, generator.date.end, by = "day")),
+      replicate(transactions, ch_company()),
+      amount * signs,
+      random(generator.card.providers),
+      category,
+      subcategory,
+      random(generator.currencies, generator.currencies.probabilities),
+      random(
+        c("Y", "N"),
+        prob = binaryProbabilityVector(generator.transaction.billable.probability)
+      ),
+      random(
+        replicate(
+          generator.transaction.accounts,
+          paste0(sample(1:9, 10, replace = TRUE), collapse = "")
+        )
+      ),
+      stringsAsFactors = FALSE,
+      check.names = FALSE,
+      fix.empty.names = FALSE
+    ),
+    generator.csv.field.names
   )
 }
 
-createSyntheticDataCsv <- function(transactions, filename = "transactions.csv") {
-  transactions <- createSyntheticData(transactions)
-  transactions <- transactions[order(transactions$transaction_date), ]
+createSyntheticDataCsv <- function(rows, filename = "transactions.csv") {
+  transactions <- createSyntheticData(rows)
+  transactions <- transactions[order(transactions$Date), ]
   write.csv(transactions, file = filename, row.names = FALSE, quote = TRUE)
 }
 

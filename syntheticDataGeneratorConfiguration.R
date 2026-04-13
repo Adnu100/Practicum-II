@@ -24,3 +24,8 @@ generator.card.providers <- c(
   "American Express", "Citi Platinum", "Chase Sapphire",
   "Capital One Venture", "Bank of America Premium", "Visa", "Mastercard"
 )
+
+generator.csv.field.names <- c(
+  "Date", "Account Number ", "Description", "Amount", "Card", 
+  "Category", "Subcategory", "Currency", "Billable"
+)
