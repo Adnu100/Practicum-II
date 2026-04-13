@@ -1,3 +1,8 @@
+#' Synthetic Data Generator Configuration
+#' 
+#' This script defines the configuration parameters for the synthetic data generator,
+#' including date range, currencies, transaction details, and card providers.
+
 generator.date.start <- as.Date("2020-01-01")
 generator.date.end <- as.Date("2023-12-31")
 
