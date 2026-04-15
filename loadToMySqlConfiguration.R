@@ -15,16 +15,11 @@ etl.mysql.dbname   <- "practicum_db"
 etl.date.start <- as.Date("2019-01-01")
 etl.date.end   <- as.Date("2024-12-31")
 
-etl.month.names <- c(
-  "January", "February", "March", "April",
-  "May", "June", "July", "August",
-  "September", "October", "November", "December"
-)
+etl.month.names <- month.name
 
 etl.tables.drop <- c(
-  "expense_facts", "dim_date", "dim_employee",
-  "dim_client", "dim_project", "dim_category",
-  "dim_currency", "dim_merchant"
+  "expense_facts", "dim_date", "dim_employee", "dim_client",
+  "dim_project", "dim_category", "dim_currency", "dim_merchant"
 )
 
 etl.fact.batch.size <- 500
