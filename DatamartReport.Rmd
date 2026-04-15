@@ -1,0 +1,190 @@
+---
+title: "CS5200 Practicum II - Expense Datamart Report"
+author: "Siddhi Bhanushali"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+---
+
+```{r setup, eval = TRUE, warning = FALSE, message = FALSE}
+source("constants.R")
+source("loadToMySqlConfiguration.R")
+
+install_if_missing("RMySQL")
+```
+
+```{r connectMySQL, eval = TRUE}
+mysql_con <- dbConnect(
+  RMySQL::MySQL(),
+  host     = etl.mysql.host,
+  port     = etl.mysql.port,
+  user     = etl.mysql.user,
+  password = etl.mysql.password,
+  dbname   = etl.mysql.dbname
+)
+cat("Connected to MySQL.\n")
+```
+
+# 1. Data Warehouse Overview
+
+The current document presents the cost analysis datamart created for Heracletes Advisors PC. The datamart features a star schema consisting of a central fact table called `expense_facts` along with dimensional tables for dates, employees, clients, projects, categories, currencies, and merchants.
+
+```{sql overviewCounts, connection = mysql_con}
+SELECT 
+  (SELECT COUNT(*) FROM expense_facts) AS total_facts,
+  (SELECT COUNT(*) FROM dim_employee)  AS total_employees,
+  (SELECT COUNT(*) FROM dim_client)    AS total_clients,
+  (SELECT COUNT(*) FROM dim_project)   AS total_projects,
+  (SELECT COUNT(*) FROM dim_category)  AS total_categories
+```
+
+# 2. Total and Average Expense per Category per Quarter
+
+This query tests the slicing capability of the fact table based on categories, which are aggregated quarterly.
+
+```{sql expenseByCategory, connection = mysql_con}
+SELECT dc.category_name,
+       ef.year,
+       ef.quarter,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_category dc ON ef.category_key = dc.category_key
+ GROUP BY dc.category_name, ef.year, ef.quarter
+ ORDER BY ef.year, ef.quarter, total_expense DESC
+```
+
+# 3. Total Expenses per Client per Project per Month
+
+This highlights the essential analytical query, where we slice based on clients, projects, and time periods.
+
+```{sql expenseByClientProject, connection = mysql_con}
+SELECT dcl.client_name,
+       dp.project_name,
+       ef.year,
+       ef.month,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_client  dcl ON ef.client_key  = dcl.client_key
+  JOIN dim_project dp  ON ef.project_key = dp.project_key
+ WHERE ef.client_key > 0
+ GROUP BY dcl.client_name, dp.project_name, ef.year, ef.month
+ ORDER BY dcl.client_name, dp.project_name, ef.year, ef.month
+ LIMIT 20
+```
+
+# 4. Monthly Expense Trend
+
+```{sql monthlyTrend, connection = mysql_con}
+SELECT ef.year,
+       ef.month,
+       dd.month_name,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_date dd ON ef.date_key = dd.date_key
+ GROUP BY ef.year, ef.month, dd.month_name
+ ORDER BY ef.year, ef.month
+```
+
+# 5. Billable vs Non-Billable Expenses by Client
+
+```{sql billableAnalysis, connection = mysql_con}
+SELECT dcl.client_name,
+       CASE WHEN ef.billable = 1 THEN 'Billable' ELSE 'Non-Billable' END AS expense_type,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_client dcl ON ef.client_key = dcl.client_key
+ WHERE ef.client_key > 0
+ GROUP BY dcl.client_name, ef.billable
+ ORDER BY dcl.client_name, ef.billable DESC
+```
+
+# 6. Top 10 Expense Categories by Total Amount
+
+```{sql topCategories, connection = mysql_con}
+SELECT dc.category_name,
+       dc.subcategory_name,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       COUNT(*) AS num_transactions,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_per_txn
+  FROM expense_facts ef
+  JOIN dim_category dc ON ef.category_key = dc.category_key
+ GROUP BY dc.category_name, dc.subcategory_name
+ ORDER BY total_expense
+ LIMIT 10
+```
+
+# 7. Expense per Employee per Quarter
+
+```{sql employeeExpenses, connection = mysql_con}
+SELECT CONCAT(de.first_name, ' ', de.last_name) AS employee_name,
+       ef.year,
+       ef.quarter,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_employee de ON ef.employee_key = de.employee_key
+ GROUP BY de.employee_key, de.first_name, de.last_name, ef.year, ef.quarter
+ ORDER BY de.last_name, ef.year, ef.quarter
+ LIMIT 20
+```
+
+# 8. Currency Distribution
+
+```{sql currencyDistribution, connection = mysql_con}
+SELECT dcu.currency_code,
+       COUNT(*) AS num_transactions,
+       ROUND(SUM(ef.txn_amount), 2) AS total_raw_amount,
+       ROUND(AVG(ef.txn_amount), 2) AS avg_raw_amount
+  FROM expense_facts ef
+  JOIN dim_currency dcu ON ef.currency_key = dcu.currency_key
+ GROUP BY dcu.currency_code
+ ORDER BY num_transactions DESC
+```
+
+# 9. Quarterly Expense by Client (Year-over-Year View)
+
+```{sql quarterlyByClient, connection = mysql_con}
+SELECT dcl.client_name,
+       ef.year,
+       ef.quarter,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_expense
+  FROM expense_facts ef
+  JOIN dim_client dcl ON ef.client_key = dcl.client_key
+ WHERE ef.client_key > 0
+ GROUP BY dcl.client_name, ef.year, ef.quarter
+ ORDER BY dcl.client_name, ef.year, ef.quarter
+```
+
+# 10. Partition and Index Verification
+
+Ensure that partitioning and indexing are enabled on the fact table.
+
+```{sql showPartitions, connection = mysql_con}
+SELECT PARTITION_NAME, TABLE_ROWS
+  FROM information_schema.PARTITIONS
+ WHERE TABLE_NAME = 'expense_facts'
+   AND TABLE_SCHEMA = DATABASE()
+```
+
+```{sql showIndexes, connection = mysql_con}
+SHOW INDEX FROM expense_facts
+```
+
+# Cleanup
+
+```{r cleanup, eval = TRUE, warning = FALSE}
+dbDisconnect(mysql_con)
+cat("MySQL connection closed.\n")
+
+```
