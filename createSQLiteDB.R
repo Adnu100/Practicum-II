@@ -8,6 +8,9 @@ source("syntheticDataGeneratorConfiguration.R")
 
 install_if_missing("charlatan")
 
+#' Creates the SQLite database with the necessary tables and relationships.
+#' 
+#' @param conn A database connection object.
 createSQLiteDB <- function(conn) {
   cat("creating SQLite database\n")
   tables <- c(
@@ -83,6 +86,10 @@ createSQLiteDB <- function(conn) {
   ")
 }
 
+#' Populates the SQLite database with synthetic data for categories,
+#' subcategories, cards, currencies, employees, and accounts.
+#'
+#' @param conn A database connection object.
 populateSQLiteDB <- function(conn) {
   cat("populating SQLite database\n")
   categoryIds <- batchInsert(
@@ -130,6 +137,7 @@ populateSQLiteDB <- function(conn) {
     )
   )
 }
+
 main <- function() {
   conn <- getConnection()
   on.exit(dbDisconnect(conn))

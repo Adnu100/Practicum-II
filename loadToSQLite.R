@@ -1,6 +1,19 @@
+#' This script loads data from a CSV file into an SQLite database. It reads the 
+#' CSV file, processes the data, and inserts it into the appropriate tables in 
+#' the database. The script uses the RSQLite package to interact with the SQLite
+#' database.
+#' 
+#' usage: Rscript loadToSQLite.R [filename]
+#' @param filename The name of the CSV file to load into the SQLite database.
+#' 
+#' @author Adnesh Dhamangaonkar
+
 source("constants.R")
 source("dbconstants.R")
 
+#' Loads data from the SQLite database into a list of data frames.
+#' 
+#' @param conn A database connection object.
 loadDataFromSQLite <- function(conn) {
   data <- list()
   data$account <- dbGetQuery(conn, "SELECT ID, ACCOUNT_NUMBER, EMPLOYEE_ID FROM ACCOUNT;")
@@ -10,6 +23,9 @@ loadDataFromSQLite <- function(conn) {
   data
 }
 
+#' Loads data from a CSV file into the SQLite database.
+#' 
+#' @param conn A database connection object.
 loadDataToSQLite <- function(conn, data) {
   metaData <<- loadDataFromSQLite(conn)
   csvData <<- data
