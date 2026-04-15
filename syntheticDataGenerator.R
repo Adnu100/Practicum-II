@@ -6,6 +6,8 @@
 #' usage: Rscript syntheticDataGenerator.R [filename] [number of rows]
 #' @param filename The name of the CSV file to create (default is "transactions.csv").
 #' @param number of rows The number of transactions to generate (default is 500).
+#' 
+#' @author Adnesh Dhamangaonkar
 
 source("constants.R")
 source("syntheticDataGeneratorConfiguration.R")
@@ -59,6 +61,7 @@ createSyntheticData <- function(transactions) {
   setNames(
     data.frame(
       random(seq(generator.date.start, generator.date.end, by = "day")),
+      random(generator.transaction.accounts),
       replicate(transactions, ch_company()),
       amount * signs,
       random(generator.card.providers),
@@ -68,12 +71,6 @@ createSyntheticData <- function(transactions) {
       random(
         c("Y", "N"),
         prob = binaryProbabilityVector(generator.transaction.billable.probability)
-      ),
-      random(
-        replicate(
-          generator.transaction.accounts,
-          paste0(sample(1:9, 10, replace = TRUE), collapse = "")
-        )
       ),
       stringsAsFactors = FALSE,
       check.names = FALSE,
@@ -97,14 +94,14 @@ main <- function() {
   args = commandArgs(trailingOnly = TRUE)
   argLength = length(args)
   if(argLength > 2)
-    cat("usage: Rscript syntheticDatqGenerator.R [filename] [number of rows]\n")
+    cat("usage: Rscript syntheticDataGenerator.R [filename] [number of rows]\n")
   else {
     rows = ifelse(argLength == 2, as.numeric(args[2]), 500)
     filename = ifelse(argLength >= 1, args[1], "transactions.csv")
-    createSyntheticDataCsv(rows, filename)
     if(file.exists(filename)) {
       cat("warning: file already exists; overwriting...\n")
     }
+    createSyntheticDataCsv(rows, filename)
     cat(sprintf("Wrote %d synthetic transactions to %s\n", rows, filename))
   }
 }

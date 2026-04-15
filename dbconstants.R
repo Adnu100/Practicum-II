@@ -1,0 +1,1 @@
+sqlite.file.name <- "transactions.db"
