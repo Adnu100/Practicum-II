@@ -27,8 +27,8 @@ loadDataFromSQLite <- function(conn) {
 #' 
 #' @param conn A database connection object.
 loadDataToSQLite <- function(conn, data) {
-  metaData <<- loadDataFromSQLite(conn)
-  csvData <<- data
+  metaData <- loadDataFromSQLite(conn)
+  csvData <- data
   transactions <- data.frame(
     ACCOUNT_ID = metaData$account$ID[
       match(data$Account.Number, metaData$account$ACCOUNT_NUMBER)
@@ -49,6 +49,24 @@ loadDataToSQLite <- function(conn, data) {
   batchInsert(conn, "USER_TRANSACTION", transactions)
 }
 
+addToProcessedFiles <- function(conn, filename) {
+  cat("adding file", filename, "to PROCESSED_FILES table\n")
+  dbExecute(
+    conn,
+    "INSERT INTO PROCESSED_FILES (FILE_NAME, PROCESSED_AT) VALUES (?, ?);",
+    params = list(filename, Sys.time())
+  )
+}
+
+checkIfProcessed <- function(conn, filename) {
+  result <- dbGetQuery(
+    conn,
+    "SELECT COUNT(*) AS count FROM PROCESSED_FILES WHERE FILE_NAME = ?;",
+    params = list(filename)
+  )
+  result$count[1] > 0
+}
+
 main <- function() {
   args = commandArgs(trailingOnly = TRUE)
   argLength = length(args)
@@ -57,10 +75,18 @@ main <- function() {
   else {
     conn <- getConnection()
     on.exit(dbDisconnect(conn))
-    csvData <- read.csv(args[1], stringsAsFactors = FALSE)
-    cat("loading csv data to SQLite database...\n")
-    loadDataToSQLite(conn, csvData)
-    cat("data loaded successfully!\n")
+    csvfile <- args[1]
+    if(!file.exists(csvfile)) {
+      cat("file", csvfile, "does not exist\n")
+    } else if(checkIfProcessed(conn, csvfile)) {
+      cat("file", csvfile, "has already been processed. skipping...\n")
+    } else {
+      csvData <- read.csv(csvfile, stringsAsFactors = FALSE)
+      cat("loading csv data to SQLite database...\n")
+      loadDataToSQLite(conn, csvData)
+      addToProcessedFiles(conn, csvfile)
+      cat("data loaded successfully!\n")
+    }
   }
 }
 

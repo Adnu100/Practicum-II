@@ -14,10 +14,11 @@ install_if_missing("charlatan")
 createSQLiteDB <- function(conn) {
   cat("creating SQLite database\n")
   tables <- c(
-    "ACCOUNT", "EMPLOYEE", "CARD", "CURRENCY",
-    "SUBCATEGORY", "CATEGORY", "USER_TRANSACTION"
+    "USER_TRANSACTION", "ACCOUNT", "EMPLOYEE", "CARD", "CURRENCY",
+    "SUBCATEGORY", "CATEGORY", "PROCESSED_FILES"
   )
   for(query in paste("DROP TABLE IF EXISTS", tables, ";")) {
+    cat("executing query:", query, "\n")
     dbExecute(conn, query)
   }
   
@@ -84,6 +85,18 @@ createSQLiteDB <- function(conn) {
       FOREIGN KEY (SUBCATEGORY_ID) REFERENCES SUBCATEGORY(ID)
     );
   ")
+  
+  dbExecute(conn, "
+    CREATE TABLE PROCESSED_FILES (
+      ID INTEGER PRIMARY KEY AUTOINCREMENT,
+      FILE_NAME TEXT,
+      PROCESSED_AT DATETIME
+    );
+  ")
+  
+  dbExecute(
+    conn, "CREATE INDEX PROCESSED_FILES_INDEX ON PROCESSED_FILES(FILE_NAME);"
+  )
 }
 
 #' Populates the SQLite database with synthetic data for categories,
