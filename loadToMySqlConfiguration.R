@@ -4,7 +4,7 @@
 #' including SQLite source settings, MySQL target credentials, date range,
 #' and batch sizing.
 
-etl.sqlite.file <- "expenses.sqlite"
+etl.sqlite.file <- "transactions.db"
 
 etl.mysql.host     <- "mysql-practicum-practicum-dbms.a.aivencloud.com"
 etl.mysql.port     <- 12187
@@ -18,8 +18,14 @@ etl.date.end   <- as.Date("2024-12-31")
 etl.month.names <- month.name
 
 etl.tables.drop <- c(
-  "expense_facts", "dim_date", "dim_employee", "dim_client",
-  "dim_project", "dim_category", "dim_currency", "dim_merchant"
+  "expense_facts",
+  "dim_date",
+  "dim_employee",
+  "dim_client",
+  "dim_project",
+  "dim_category",
+  "dim_currency",
+  "dim_merchant"
 )
 
 etl.fact.batch.size <- 500
