@@ -41,4 +41,8 @@ generator.csv.field.names <- c(
   "Category", "Subcategory", "Currency", "Billable"
 )
 
+generator.employees <- 2000
+generator.clients <- 50
+generator.projects <- 200
+
 set.seed(NULL)
