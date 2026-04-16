@@ -1,7 +1,7 @@
 #' Author : Siddhi Satish Bhanushali
 #' ETL: Load SQLite Expense Data into MySQL Analytical Datamart
 #'
-#' This script extracts operational data from a local SQLite database, transforms
+#' This script extracts data from a local SQLite database, transforms
 #' it into a star schema (dimensions + fact table), and loads it into the MySQL
 #' analytical datamart hosted on Aiven.
 #' usage: Rscript loadToMySql.R
@@ -22,7 +22,7 @@ connectSQLite <- function() {
   con
 }
 
-#' Connect to the MySQL analytical datamart on Aiven.
+#' Connect to the MySQL datamart on Aiven.
 #'
 #' @return A DBIConnection to the MySQL database.
 connectMySQL <- function() {
@@ -39,7 +39,7 @@ connectMySQL <- function() {
   con
 }
 
-#' Drop all datamart tables in reverse dependency order.
+#' Drop all datamart tables in a order that tables without dependencies are deleted first.
 #'
 #' @param conn A DBIConnection to MySQL.
 dropTables <- function(conn) {
@@ -47,7 +47,7 @@ dropTables <- function(conn) {
   for (tbl in etl.tables.drop) {
     tryCatch(
       dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", tbl)),
-      error = function(e) cat(sprintf("  Note: could not drop %s: %s\n", tbl, e$message))
+      error = function(e) cat(sprintf("Could not drop %s: %s\n", tbl, e$message))
     )
   }
 }
@@ -185,7 +185,7 @@ createFactTable <- function(conn) {
 #' Insert all rows of a data frame into a MySQL table in batches.
 #'
 #' Builds multi-row INSERT statements for performance rather than
-#' inserting one row at a time.
+#' inserting one row at a time. Batch inserts rows.
 #'
 #' @param conn A DBIConnection to MySQL.
 #' @param table The name of the target table (used in error messages).
@@ -251,22 +251,16 @@ loadDateDimension <- function(conn) {
        (date_key, full_date, day_of_month, month, month_name, quarter, year, day_of_week)
      VALUES %s"
   )
-  cat(sprintf("  Loaded %d dates\n", nrow(date_df)))
+  cat(sprintf("Loaded %d dates\n", nrow(date_df)))
 }
 
 #' Load all dimension tables from SQLite into MySQL.
-#'
-#' SQLite source table names match the schema created by createSQLiteDB.R:
-#' EMPLOYEE, ACCOUNT, CARD, CURRENCY, SUBCATEGORY, CATEGORY, USER_TRANSACTION.
-#' CLIENT, PROJECT, and ASSIGNMENT do not exist in the SQLite schema, so stub
-#' rows (key = 0) are inserted so the fact table foreign keys remain valid.
 #'
 #' @param src A DBIConnection to the SQLite source.
 #' @param tgt A DBIConnection to the MySQL target.
 loadDimensions <- function(src, tgt) {
   cat("\nLoading dimension data...\n")
   
-  # SQLite EMPLOYEE has ID and NAME (full name in one field); split into first_name / last_name
   emp_raw    <- dbGetQuery(src, "SELECT ID, NAME FROM EMPLOYEE")
   name_parts <- strsplit(emp_raw$NAME, " ", fixed = TRUE)
   employees  <- data.frame(
@@ -281,22 +275,26 @@ loadDimensions <- function(src, tgt) {
     tgt, "dim_employee", employees,
     "INSERT INTO dim_employee (employee_key, first_name, last_name, email, department) VALUES %s"
   )
-  cat(sprintf("  Loaded %d employees\n", nrow(employees)))
+  cat(sprintf("Loaded %d employees\n", nrow(employees)))
   
-  # No CLIENT table in SQLite schema; insert a stub so fact rows with client_key = 0 remain valid
-  dbExecute(tgt,
-            "INSERT INTO dim_client (client_key, client_name, country) VALUES (0, 'Unassigned', NULL)"
+  clients <- dbGetQuery(src, "SELECT ID AS client_key, CLIENT_NAME AS client_name FROM CLIENT")
+  clients$country <- NA_character_
+  mysqlBulkInsert(
+    tgt, "dim_client", clients,
+    "INSERT INTO dim_client (client_key, client_name, country) VALUES %s"
   )
-  cat("  Loaded 1 stub client (no CLIENT table in SQLite schema)\n")
+  cat(sprintf("Loaded %d clients\n", nrow(clients)))
   
-  # No PROJECT table in SQLite schema; insert a stub row
-  dbExecute(tgt,
-            "INSERT INTO dim_project (project_key, project_name, client_key, budget, start_date, end_date)
-     VALUES (0, 'Unassigned', 0, NULL, NULL, NULL)"
+  projects <- dbGetQuery(src, "SELECT ID AS project_key, PROJECT_NAME AS project_name, CLIENT_ID AS client_key FROM PROJECT")
+  projects$budget     <- NA_real_
+  projects$start_date <- NA_character_
+  projects$end_date   <- NA_character_
+  mysqlBulkInsert(
+    tgt, "dim_project", projects,
+    "INSERT INTO dim_project (project_key, project_name, client_key, budget, start_date, end_date) VALUES %s"
   )
-  cat("  Loaded 1 stub project (no PROJECT table in SQLite schema)\n")
+  cat(sprintf("Loaded %d projects\n", nrow(projects)))
   
-  # SQLite tables: CATEGORY (ID, CATEGORY_NAME) and SUBCATEGORY (ID, SUBCATEGORY_NAME, CATEGORY_ID)
   cat_data <- dbGetQuery(src, "SELECT s.ID AS subcategory_id, c.CATEGORY_NAME AS category_name, s.SUBCATEGORY_NAME AS subcategory_name FROM SUBCATEGORY s JOIN CATEGORY c ON s.CATEGORY_ID = c.ID")
   for (i in seq_len(nrow(cat_data))) {
     dbExecute(tgt, sprintf(
@@ -308,17 +306,15 @@ loadDimensions <- function(src, tgt) {
       cat_data$subcategory_id[i]
     ))
   }
-  cat(sprintf("  Loaded %d categories/subcategories\n", nrow(cat_data)))
+  cat(sprintf("Loaded %d categories/subcategories\n", nrow(cat_data)))
   
-  # SQLite table: CURRENCY (ID, CURRENCY_CODE)
   currencies <- dbGetQuery(src, "SELECT ID AS currency_key, CURRENCY_CODE AS currency_code FROM CURRENCY")
   mysqlBulkInsert(
     tgt, "dim_currency", currencies,
     "INSERT INTO dim_currency (currency_key, currency_code) VALUES %s"
   )
-  cat(sprintf("  Loaded %d currencies\n", nrow(currencies)))
+  cat(sprintf("Loaded %d currencies\n", nrow(currencies)))
   
-  # No MERCHANT table in SQLite; derive distinct merchant names from USER_TRANSACTION
   merch_raw <- dbGetQuery(src,
                           "SELECT DISTINCT MERCHANT FROM USER_TRANSACTION WHERE MERCHANT IS NOT NULL ORDER BY MERCHANT"
   )
@@ -331,21 +327,37 @@ loadDimensions <- function(src, tgt) {
     tgt, "dim_merchant", merchants,
     "INSERT INTO dim_merchant (merchant_key, merchant_name) VALUES %s"
   )
-  cat(sprintf("  Loaded %d merchants\n", nrow(merchants)))
+  cat(sprintf("Loaded %d merchants\n", nrow(merchants)))
   
   loadDateDimension(tgt)
 }
 
 #' Build a lookup list mapping each employee_id to their assigned projects and clients.
 #'
-#' Since the SQLite schema has no assignments table, this returns an empty list,
-#' which causes loadFacts to assign all transactions to project_key = 0 / client_key = 0.
+#' Uses PROJECT_ASSIGNMENT joined to PROJECT to resolve the client for each project.
+#' Employees with no assignment fall back to project_key = 0 / client_key = 0 in loadFacts.
 #'
 #' @param src A DBIConnection to the SQLite source.
-#' @return An empty named list.
+#' @return A named list keyed by employee_id, each entry a list of project_id/client_id pairs.
 buildAssignmentLookup <- function(src) {
-  cat("  No ASSIGNMENT table in SQLite schema; all transactions -> project 0 / client 0\n")
-  list()
+  assignments <- dbGetQuery(src, "
+    SELECT pa.EMPLOYEE_ID AS employee_id,
+           pa.PROJECT_ID  AS project_id,
+           p.CLIENT_ID    AS client_id
+      FROM PROJECT_ASSIGNMENT pa
+      JOIN PROJECT p ON pa.PROJECT_ID = p.ID
+  ")
+  lookup <- list()
+  for (i in seq_len(nrow(assignments))) {
+    eid            <- as.character(assignments$employee_id[i])
+    n              <- length(lookup[[eid]]) + 1
+    lookup[[eid]][[n]] <- list(
+      project_id = assignments$project_id[i],
+      client_id  = assignments$client_id[i]
+    )
+  }
+  cat(sprintf("Built assignment lookup for %d employees\n", length(lookup)))
+  lookup
 }
 
 #' Load the expense_facts table, allocating each transaction to its merchant key.
@@ -360,7 +372,6 @@ buildAssignmentLookup <- function(src) {
 loadFacts <- function(src, tgt) {
   cat("\nLoading fact table...\n")
   
-  # Pull transactions from SQLite using actual column names
   txn_data <- dbGetQuery(src, "
     SELECT t.ID            AS txn_id,
            t.DATE          AS txn_date,
@@ -372,19 +383,16 @@ loadFacts <- function(src, tgt) {
            t.MERCHANT      AS merchant_name
       FROM USER_TRANSACTION t
   ")
-  cat(sprintf("  Processing %d transactions...\n", nrow(txn_data)))
+  cat(sprintf("Processing %d transactions...\n", nrow(txn_data)))
   
-  # Build account -> employee lookup from SQLite
   accounts <- dbGetQuery(src, "SELECT ID AS account_id, EMPLOYEE_ID AS employee_id FROM ACCOUNT")
   acc_lookup <- accounts$employee_id
   names(acc_lookup) <- as.character(accounts$account_id)
   
-  # Build merchant name -> key lookup from MySQL dim_merchant
   merch_dim    <- dbGetQuery(tgt, "SELECT merchant_key, merchant_name FROM dim_merchant")
   merch_lookup <- merch_dim$merchant_key
   names(merch_lookup) <- merch_dim$merchant_name
   
-  # No assignments in SQLite schema
   assign_lookup <- buildAssignmentLookup(src)
   
   dbBegin(tgt)
@@ -398,11 +406,9 @@ loadFacts <- function(src, tgt) {
     dk   <- as.integer(format(dt, "%Y%m%d"))
     qtr  <- ceiling(mo / 3L)
     
-    # Resolve employee_key from account_id
     emp_key <- acc_lookup[as.character(row$account_id)]
     if (is.na(emp_key)) emp_key <- 0L
     
-    # Resolve merchant_key
     merch_key <- merch_lookup[row$merchant_name]
     if (is.na(merch_key)) merch_key <- 0L
     
@@ -443,12 +449,12 @@ loadFacts <- function(src, tgt) {
     if (i %% etl.fact.batch.size == 0) {
       dbCommit(tgt)
       dbBegin(tgt)
-      cat(sprintf("    Processed %d / %d transactions\n", i, nrow(txn_data)))
+      cat(sprintf("Processed %d of %d transactions\n", i, nrow(txn_data)))
     }
   }
   
   dbCommit(tgt)
-  cat(sprintf("  Loaded %d fact rows.\n", fact_count))
+  cat(sprintf("Loaded %d fact rows.\n", fact_count))
 }
 
 #' Print row counts for all datamart tables and a sample aggregation query.
@@ -459,7 +465,7 @@ verifyDatamart <- function(conn) {
   for (tbl in c("dim_date", "dim_employee", "dim_client", "dim_project",
                 "dim_category", "dim_currency", "dim_merchant", "expense_facts")) {
     cnt <- dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", tbl))
-    cat(sprintf("  %s: %d rows\n", tbl, cnt$n))
+    cat(sprintf("%s: %d rows\n", tbl, cnt$n))
   }
   
   cat("\nSample - total expenses by category per quarter:\n")
