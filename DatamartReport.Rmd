@@ -180,7 +180,30 @@ SELECT dcl.client_name,
  ORDER BY dcl.client_name, ef.year, ef.quarter
 ```
 
-# 10. Partition and Index Verification
+# 10. Full Analytical Slice: Category per Client per Project per Month per Quarter per Year
+
+This is the primary fact table query the datamart was designed to support. It combines all the required dimensions in a single slice — category (rolled up from subcategory), client, project, month, quarter, and year — exactly as specified in the requirements.
+
+```{sql fullSlice, connection = mysql_con, author = "Siddhi Satish Bhanushali"}
+SELECT dc.category_name,
+       dcl.client_name,
+       dp.project_name,
+       ef.year,
+       ef.quarter,
+       ef.month,
+       ROUND(SUM(ef.allocated_amount), 2) AS total_expense,
+       ROUND(AVG(ef.allocated_amount), 2) AS avg_expense,
+       COUNT(*) AS num_transactions
+  FROM expense_facts ef
+  JOIN dim_category dc  ON ef.category_key = dc.category_key
+  JOIN dim_client   dcl ON ef.client_key   = dcl.client_key
+  JOIN dim_project  dp  ON ef.project_key  = dp.project_key
+ GROUP BY dc.category_name, dcl.client_name, dp.project_name, ef.year, ef.quarter, ef.month
+ ORDER BY ef.year, ef.quarter, ef.month, dcl.client_name, dp.project_name
+ LIMIT 20
+```
+
+# 11. Partition and Index Verification
 
 These queries confirm that the `expense_facts` table is correctly partitioned by year and that all indexes are in place, which is required by the practicum specification for fast analytical queries.
 
