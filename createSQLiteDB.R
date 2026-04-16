@@ -125,6 +125,9 @@ createSQLiteDB <- function(conn) {
   ")
 }
 
+#' Populates the CATEGORY and SUBCATEGORY tables with synthetic data.
+#' 
+#' @param conn A database connection object.
 populateCategoryAndSubcategoryData <- function(conn) {
   categoryIds <- batchInsert(
     conn,
@@ -156,13 +159,19 @@ populateCategoryAndSubcategoryData <- function(conn) {
   )
 }
 
-populateCardAndCurrencyData <- function(conn, employeeIds) {
+#' Populates the CARD and CURRENCY tables with synthetic data.
+#' 
+#' @param conn A database connection object.
+populateCardAndCurrencyData <- function(conn) {
   batchInsert(conn, "CARD", data.frame(CARD_TYPE = generator.card.providers))
   batchInsert(
     conn, "CURRENCY", data.frame(CURRENCY_CODE = generator.currencies)
   )
 }
 
+#' Populates the EMPLOYEE table with synthetic employee names.
+#' 
+#' @param conn A database connection object.
 populateRandomEmployees <- function(conn) {
   batchInsert(
     conn,
@@ -172,6 +181,11 @@ populateRandomEmployees <- function(conn) {
   )
 }
 
+#' Populates the ACCOUNT, CLIENT, PROJECT, and PROJECT_ASSIGNMENT tables with
+#' synthetic data, assigning employees to accounts and projects.
+#' 
+#' @param conn A database connection object.
+#' @param employeeIds A vector of employee IDs to assign accounts and projects to.
 populateRandomEmployeeAccountProjectAssignments <- function(conn, employeeIds) {
   batchInsert(
     conn,
