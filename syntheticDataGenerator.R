@@ -38,6 +38,7 @@ randomGenerator <- function(total) {
 #' @param transactions The number of transactions to generate.
 #' @return A data frame containing the generated transaction data.
 createSyntheticData <- function(transactions) {
+  account <- sample(generator.transaction.accounts, 1)
   random <- randomGenerator(transactions)
   category <- random(generator.transaction.categories)
   subcategory <- vapply(
@@ -61,7 +62,7 @@ createSyntheticData <- function(transactions) {
   setNames(
     data.frame(
       random(seq(generator.date.start, generator.date.end, by = "day")),
-      random(generator.transaction.accounts),
+      replicate(transactions, account),
       replicate(transactions, ch_company()),
       amount * signs,
       random(generator.card.providers),

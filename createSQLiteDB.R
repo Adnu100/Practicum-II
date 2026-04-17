@@ -248,7 +248,7 @@ populateSQLiteDB <- function(conn) {
 }
 
 main <- function() {
-  conn <- getConnection()
+  conn <- sqlite.getConnection()
   on.exit(dbDisconnect(conn))
   cat("creating SQLite database\n")
   createSQLiteDB(conn)

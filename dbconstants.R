@@ -13,7 +13,7 @@ sqlite.file.name <- "transactions.db"
 #' Establishes a connection to the SQLite database.
 #'
 #' @return A database connection object.
-getConnection <- function() {
+sqlite.getConnection <- function() {
   conn <- dbConnect( RSQLite::SQLite(), sqlite.file.name)
   dbExecute(conn, "PRAGMA FOREIGN_KEYS = ON;")
   conn

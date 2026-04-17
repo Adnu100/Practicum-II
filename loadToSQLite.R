@@ -73,7 +73,7 @@ main <- function() {
   if(argLength != 1)
     cat("usage: Rscript loadToSQLite.R [filename]\n")
   else {
-    conn <- getConnection()
+    conn <- sqlite.getConnection()
     on.exit(dbDisconnect(conn))
     csvfile <- args[1]
     if(!file.exists(csvfile)) {
