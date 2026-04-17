@@ -284,7 +284,6 @@ loadDimensions <- function(src, tgt) {
     "INSERT INTO dim_client (client_key, client_name, country) VALUES %s"
   )
   cat(sprintf("Loaded %d clients\n", nrow(clients)))
-  
   projects <- dbGetQuery(src, "SELECT ID AS project_key, PROJECT_NAME AS project_name, CLIENT_ID AS client_key FROM PROJECT")
   projects$budget     <- NA_real_
   projects$start_date <- NA_character_
@@ -360,44 +359,44 @@ buildAssignmentLookup <- function(src) {
   lookup
 }
 
-#' Load the expense_facts table, allocating each transaction to its merchant key.
+#' Load the expense_facts table, allocating each transaction evenly across assigned projects.
 #'
-#' Employees with no project assignment are loaded with project_key = 0 and
-#' client_key = 0. A merchant lookup is built from dim_merchant in MySQL so that
-#' each transaction's MERCHANT text maps to the correct merchant_key.
-#' Inserts are committed in batches of etl.fact.batch.size for performance.
+#' All fact rows are first collected into a data frame in R, then inserted into
+#' MySQL in batches using mysqlBulkInsert for performance. Employees with no
+#' project assignment get project_key = 0 and client_key = 0.
 #'
 #' @param src A DBIConnection to the SQLite source.
 #' @param tgt A DBIConnection to the MySQL target.
 loadFacts <- function(src, tgt) {
   cat("\nLoading fact table...\n")
-  
+
   txn_data <- dbGetQuery(src, "
-    SELECT t.ID            AS txn_id,
-           t.DATE          AS txn_date,
-           t.AMOUNT        AS amount,
-           t.BILLABLE      AS billable,
-           t.ACCOUNT_ID    AS account_id,
+    SELECT t.ID             AS txn_id,
+           t.DATE           AS txn_date,
+           t.AMOUNT         AS amount,
+           t.BILLABLE       AS billable,
+           t.ACCOUNT_ID     AS account_id,
            t.SUBCATEGORY_ID AS subcategory_id,
-           t.CURRENCY_ID   AS currency_id,
-           t.MERCHANT      AS merchant_name
+           t.CURRENCY_ID    AS currency_id,
+           t.MERCHANT       AS merchant_name
       FROM USER_TRANSACTION t
   ")
   cat(sprintf("Processing %d transactions...\n", nrow(txn_data)))
-  
-  accounts <- dbGetQuery(src, "SELECT ID AS account_id, EMPLOYEE_ID AS employee_id FROM ACCOUNT")
+
+  accounts   <- dbGetQuery(src, "SELECT ID AS account_id, EMPLOYEE_ID AS employee_id FROM ACCOUNT")
   acc_lookup <- accounts$employee_id
   names(acc_lookup) <- as.character(accounts$account_id)
-  
+
   merch_dim    <- dbGetQuery(tgt, "SELECT merchant_key, merchant_name FROM dim_merchant")
   merch_lookup <- merch_dim$merchant_key
   names(merch_lookup) <- merch_dim$merchant_name
-  
+
   assign_lookup <- buildAssignmentLookup(src)
-  
-  dbBegin(tgt)
+
+  # Pre-allocate a list to collect all fact rows, then rbind once at the end
+  fact_rows <- vector("list", nrow(txn_data) * 3)
   fact_count <- 0
-  
+
   for (i in seq_len(nrow(txn_data))) {
     row  <- txn_data[i, ]
     dt   <- as.Date(row$txn_date)
@@ -405,55 +404,60 @@ loadFacts <- function(src, tgt) {
     yr   <- as.integer(format(dt, "%Y"))
     dk   <- as.integer(format(dt, "%Y%m%d"))
     qtr  <- ceiling(mo / 3L)
-    
+
     emp_key <- acc_lookup[as.character(row$account_id)]
     if (is.na(emp_key)) emp_key <- 0L
-    
+
     merch_key <- merch_lookup[row$merchant_name]
     if (is.na(merch_key)) merch_key <- 0L
-    
+
     projs <- assign_lookup[[as.character(emp_key)]]
-    
+
     if (is.null(projs) || length(projs) == 0) {
-      dbExecute(tgt, sprintf(
-        "INSERT INTO expense_facts
-           (date_key, employee_key, project_key, client_key, category_key,
-            currency_key, merchant_key, txn_amount, billable,
-            allocation_pct, allocated_amount, month, quarter, year)
-         VALUES (%d, %d, 0, 0, %d, %d, %d, %.2f, %d, 100.00, %.2f, %d, %d, %d)",
-        dk, emp_key, row$subcategory_id, row$currency_id,
-        merch_key, row$amount, row$billable,
-        round(row$amount, 2), mo, qtr, yr
-      ))
       fact_count <- fact_count + 1
+      fact_rows[[fact_count]] <- data.frame(
+        date_key = dk, employee_key = as.integer(emp_key),
+        project_key = 0L, client_key = 0L,
+        category_key = as.integer(row$subcategory_id),
+        currency_key = as.integer(row$currency_id),
+        merchant_key = as.integer(merch_key),
+        txn_amount = round(row$amount, 2), billable = as.integer(row$billable),
+        allocation_pct = 100.00, allocated_amount = round(row$amount, 2),
+        month = mo, quarter = qtr, year = yr,
+        stringsAsFactors = FALSE
+      )
     } else {
       n_proj    <- length(projs)
       alloc_pct <- round(100 / n_proj, 2)
       for (j in seq_along(projs)) {
-        this_pct <- if (j == n_proj) 100 - alloc_pct * (n_proj - 1) else alloc_pct
-        dbExecute(tgt, sprintf(
-          "INSERT INTO expense_facts
-             (date_key, employee_key, project_key, client_key, category_key,
-              currency_key, merchant_key, txn_amount, billable,
-              allocation_pct, allocated_amount, month, quarter, year)
-           VALUES (%d, %d, %d, %d, %d, %d, %d, %.2f, %d, %.2f, %.2f, %d, %d, %d)",
-          dk, emp_key, projs[[j]]$project_id, projs[[j]]$client_id,
-          row$subcategory_id, row$currency_id, merch_key,
-          row$amount, row$billable, this_pct,
-          round(row$amount * this_pct / 100, 2), mo, qtr, yr
-        ))
+        this_pct  <- if (j == n_proj) 100 - alloc_pct * (n_proj - 1) else alloc_pct
         fact_count <- fact_count + 1
+        fact_rows[[fact_count]] <- data.frame(
+          date_key = dk, employee_key = as.integer(emp_key),
+          project_key = as.integer(projs[[j]]$project_id),
+          client_key  = as.integer(projs[[j]]$client_id),
+          category_key = as.integer(row$subcategory_id),
+          currency_key = as.integer(row$currency_id),
+          merchant_key = as.integer(merch_key),
+          txn_amount = round(row$amount, 2), billable = as.integer(row$billable),
+          allocation_pct = this_pct,
+          allocated_amount = round(row$amount * this_pct / 100, 2),
+          month = mo, quarter = qtr, year = yr,
+          stringsAsFactors = FALSE
+        )
       }
     }
-    
-    if (i %% etl.fact.batch.size == 0) {
-      dbCommit(tgt)
-      dbBegin(tgt)
-      cat(sprintf("Processed %d of %d transactions\n", i, nrow(txn_data)))
-    }
   }
-  
-  dbCommit(tgt)
+
+  facts_df <- do.call(rbind, fact_rows[seq_len(fact_count)])
+  mysqlBulkInsert(
+    tgt, "expense_facts", facts_df,
+    "INSERT INTO expense_facts
+       (date_key, employee_key, project_key, client_key, category_key,
+        currency_key, merchant_key, txn_amount, billable,
+        allocation_pct, allocated_amount, month, quarter, year)
+     VALUES %s"
+  )
   cat(sprintf("Loaded %d fact rows.\n", fact_count))
 }
 
@@ -485,7 +489,7 @@ verifyDatamart <- function(conn) {
 
 main <- function() {
   source("loadFromMongoDB.R")
-  
+
   sqlite_con <- connectSQLite()
   mysql_con  <- connectMySQL()
   
