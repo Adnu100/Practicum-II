@@ -51,6 +51,7 @@ createExpenseReport <- function(employee, approver, transactions, allocations) {
           amount = transaction$AMOUNT,
           card = transaction$CARD_TYPE,
           category = transaction$CATEGORY_NAME,
+          currency = transaction$CURRENCY_CODE,
           subcategory = transaction$SUBCATEGORY_NAME,
           allocations = allocations[[i]]
         )
@@ -110,11 +111,12 @@ getEmployeInformation <- function(conn, accountNumber) {
     conn,
     "
     SELECT
-      t.DATE, t.MERCHANT, t.AMOUNT, cd.CARD_TYPE, c.CATEGORY_NAME, s.SUBCATEGORY_NAME
+      t.DATE, t.MERCHANT, t.AMOUNT, cu.CURRENCY_CODE, cd.CARD_TYPE, c.CATEGORY_NAME, s.SUBCATEGORY_NAME
     FROM USER_TRANSACTION t
     INNER JOIN ACCOUNT a ON t.ACCOUNT_ID = a.ID
     INNER JOIN SUBCATEGORY s ON t.SUBCATEGORY_ID = s.ID
     INNER JOIN CATEGORY c ON s.CATEGORY_ID = c.ID
+    INNER JOIN CURRENCY cu ON t.CURRENCY_ID = cu.ID
     INNER JOIN CARD cd ON t.CARD_ID = cd.ID
     WHERE a.EMPLOYEE_ID = ? AND t.BILLABLE = 1 AND t.AMOUNT < 0;
     ",

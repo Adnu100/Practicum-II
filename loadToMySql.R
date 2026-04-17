@@ -497,7 +497,7 @@ main <- function() {
   createDimensionTables(mysql_con)
   createFactTable(mysql_con)
   loadDimensions(sqlite_con, mysql_con)
-  loadFacts(sqlite_con, mysql_con)
+  #loadFacts(sqlite_con, mysql_con)
   loadMongoExpenseReports(mysql_con)
   verifyDatamart(mysql_con)
   

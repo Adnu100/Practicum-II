@@ -11,7 +11,7 @@ generator.date.start <- as.Date("2020-01-01")
 generator.date.end <- as.Date("2023-12-31")
 
 generator.currencies <- c("USD", "BRL", "Euro", "GBP")
-generator.currencies.probabilities <- c(0.55, 0.20, 0.15, 0.10)
+generator.currencies.probabilities <- c(0.80, 0.07, 0.07, 0.06)
 
 generator.transaction.billable.probability <- 0.75
 generator.transaction.amount.min <- 2

@@ -25,14 +25,29 @@ install_if_missing("RMySQL")
 buildDimLookups <- function(mysql_con) {
   projects <- dbGetQuery(mysql_con, "SELECT project_key, project_name FROM dim_project")
   clients  <- dbGetQuery(mysql_con, "SELECT client_key, client_name FROM dim_client")
+  categories <- dbGetQuery(mysql_con, "SELECT category_key, category_name, subcategory_name FROM dim_category")
+  currencies <- dbGetQuery(mysql_con, "SELECT currency_key, currency_code FROM dim_currency")
 
   project_lookup <- projects$project_key
   names(project_lookup) <- tolower(trimws(projects$project_name))
 
   client_lookup <- clients$client_key
   names(client_lookup) <- tolower(trimws(clients$client_name))
+  
+  categories_lookup <- categories$category_key
+  names(categories_lookup) <- tolower(trimws(paste(
+    categories$category_name, categories$subcategory_name, sep = " - "
+  )))
+  
+  currency_lookup <- currencies$currency_key
+  names(currency_lookup) <- tolower(trimws(currencies$currency_code))
 
-  list(project_lookup = project_lookup, client_lookup = client_lookup)
+  list(
+    project_lookup = project_lookup,
+    client_lookup = client_lookup,
+    categories_lookup = categories_lookup,
+    currency_lookup = currency_lookup
+  )
 }
 
 #' Build a date string to date_key lookup from dim_date.
@@ -109,13 +124,17 @@ loadMongoExpenseReports <- function(mysql_con) {
       }
 
       total_alloc <- sum(as.numeric(alloc_df$amount))
+      category_name <- tolower(trimws(paste(txn$category[[1]], txn$subcategory[[1]], sep = " - ")))
+      category_key <- lookups$categories_lookup[category_name]
+      currency_name <- tolower(trimws(txn$currency[[1]]))
+      currency_key <- lookups$currency_lookup[currency_name]
 
       for (a in seq_len(nrow(alloc_df))) {
         proj_name <- tolower(trimws(as.character(alloc_df$project[a])))
         cli_name  <- tolower(trimws(as.character(alloc_df$client[a])))
 
-        proj_key  <- lookups$project_lookup[proj_name]
-        cli_key   <- lookups$client_lookup[cli_name]
+        proj_key     <- lookups$project_lookup[proj_name]
+        cli_key      <- lookups$client_lookup[cli_name]
 
         if (is.na(proj_key) || is.na(cli_key)) {
           skipped_count <- skipped_count + 1
@@ -131,8 +150,8 @@ loadMongoExpenseReports <- function(mysql_con) {
           employee_key     = as.integer(emp_key),
           project_key      = as.integer(proj_key),
           client_key       = as.integer(cli_key),
-          category_key     = 0L,
-          currency_key     = 0L,
+          category_key     = as.integer(category_key),
+          currency_key     = as.integer(currency_key),
           merchant_key     = 0L,
           txn_amount       = txn_amt,
           billable         = 1L,
