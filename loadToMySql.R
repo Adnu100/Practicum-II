@@ -484,6 +484,8 @@ verifyDatamart <- function(conn) {
 }
 
 main <- function() {
+  source("loadFromMongoDB.R")
+  
   sqlite_con <- connectSQLite()
   mysql_con  <- connectMySQL()
   
@@ -492,6 +494,7 @@ main <- function() {
   createFactTable(mysql_con)
   loadDimensions(sqlite_con, mysql_con)
   loadFacts(sqlite_con, mysql_con)
+  loadMongoExpenseReports(mysql_con)
   verifyDatamart(mysql_con)
   
   dbDisconnect(sqlite_con)
