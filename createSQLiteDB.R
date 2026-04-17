@@ -13,9 +13,9 @@ install_if_missing("charlatan")
 #' @param conn A database connection object.
 createSQLiteDB <- function(conn) {
   tables <- c(
-    "USER_TRANSACTION", "ACCOUNT", "EMPLOYEE", "CARD", "CURRENCY",
-    "SUBCATEGORY", "CATEGORY", "PROCESSED_FILES", "PROJECT_ASSIGNMENT",
-    "PROJECT", "CLIENT"
+    "USER_TRANSACTION", "ACCOUNT", "PROJECT_ASSIGNMENT", "EMPLOYEE", "CARD",
+    "CURRENCY", "SUBCATEGORY", "CATEGORY", "PROCESSED_FILES",  "PROJECT",
+    "CLIENT"
   )
   for(query in paste("DROP TABLE IF EXISTS", tables, ";")) {
     cat("executing query:", query, "\n")

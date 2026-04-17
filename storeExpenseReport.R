@@ -1,11 +1,11 @@
 #' Script for storing the expense report in MongoDB. 
 #' 
-#' This script takes employeeId and approverEmployeeId as command line arguments, generates
-#' random allocations for each transaction and stores the expense report in MongoDB.
+#' This script takes an account number as command line argument and then creates an
+#' expense report by creating random allocations for randomly selected transactions
+#' from the account and stores the expense report in MongoDB.
 #' 
-#' usage: Rscript storeExpenseReport.R [employeeId] [approverEmployeeId]
-#' @param employeeId The ID of the employee for whom the expense report is to be created.
-#' @param approverEmployeeId The ID of the approver for the expense report.
+#' usage: Rscript storeExpenseReport.R [accountNumber]
+#' @param accountNumber the account number for which the expense report is to be generated.
 #'
 #' @author Adnesh Dhamangaonkar
 
@@ -59,16 +59,23 @@ createExpenseReport <- function(employee, approver, transactions, allocations) {
   ))
 }
 
-#' Retrieves the employee's ID and name from the database based on the provided employee ID.
+#' Retrieves the employee's ID and name from the database based on the provided account number.
 #' This function executes a SQL query to fetch the employee's information and returns it as a
 #' data frame.
 #'
 #' @param conn A database connection object.
-#' @param employeeId The ID of the employee whose information is to be retrieved.
+#' @param accountNumber The account number associated with the employee whose
+#'                      information is to be retrieved.
 #' @return A data frame containing the employee's ID and name.
-getEmployeeIdAndName <- function(conn, employeeId) {
+getEmployeeIdAndName <- function(conn, accountNumber) {
   dbGetQuery(
-    conn, "SELECT ID, NAME FROM EMPLOYEE WHERE ID = ?;", params = list(employeeId)
+    conn,
+    "
+    SELECT EMPLOYEE.ID, EMPLOYEE.NAME
+    FROM EMPLOYEE INNER JOIN ACCOUNT ON EMPLOYEE.ID = ACCOUNT.EMPLOYEE_ID
+    WHERE ACCOUNT_NUMBER = ?;
+    ",
+    params = list(accountNumber)
   )
 }
 
@@ -80,11 +87,14 @@ getEmployeeIdAndName <- function(conn, employeeId) {
 #' returns a list containing the employee's information, their projects, and their transactions.
 #' 
 #' @param conn A database connection object.
-#' @param employeeId The ID of the employee whose information is to be retrieved.
+#' @param accountNumber The account number associated with the employee whose
+#'                      information is to be retrieved.
 #' @return A list containing the employee's information, their assigned projects, and their
 #'         billable transactions.
-getEmployeInformation <- function(conn, employeeId) {
-  employee <- getEmployeeIdAndName(conn, employeeId)
+getEmployeInformation <- function(conn, accountNumber) {
+  employee <- getEmployeeIdAndName(conn, accountNumber)
+  employeeId <- employee$ID[1]
+  cat("Fetching information for employee ID:", employeeId, "\n")
   projects <- dbGetQuery(
     conn,
     "
@@ -176,12 +186,12 @@ main <- function() {
   on.exit(mongoconn$disconnect())
 
   args <- commandArgs(trailingOnly = TRUE)
-  if(length(args) != 2) {
-    cat("usage: Rscript storeExpenseReport.R [employeeId] [approverEmployeeId]\n")
+  if(length(args) != 1) {
+    cat("usage: Rscript storeExpenseReport.R [accountNumber]\n")
   } else {
-    employeeId <- args[1]
-    approverEmployeeId <- args[2]
-    employeeInfo <- getEmployeInformation(conn, employeeId)
+    accountNumber <- args[1]
+    approverEmployeeId <- sample(1:10, 1)
+    employeeInfo <- getEmployeInformation(conn, accountNumber)
     selectedTransactions <- employeeInfo$transactions[
       sample(nrow(employeeInfo$transactions), sample(5:50, 1), replace = FALSE),
     ]

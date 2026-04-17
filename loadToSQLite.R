@@ -49,6 +49,11 @@ loadDataToSQLite <- function(conn, data) {
   batchInsert(conn, "USER_TRANSACTION", transactions)
 }
 
+#' Adds a processed file to the PROCESSED_FILES table in the database to keep track
+#' of which files have already been processed.
+#' 
+#' @param conn A database connection object.
+#' @param filename The name of the file that has been processed.
 addToProcessedFiles <- function(conn, filename) {
   cat("adding file", filename, "to PROCESSED_FILES table\n")
   dbExecute(
@@ -58,6 +63,12 @@ addToProcessedFiles <- function(conn, filename) {
   )
 }
 
+#' Checks if a file has already been processed by querying the PROCESSED_FILES
+#' table in the database.
+#' 
+#' @param conn A database connection object.
+#' @param filename The name of the file to check.
+#' @return TRUE if the file has already been processed, FALSE otherwise.
 checkIfProcessed <- function(conn, filename) {
   result <- dbGetQuery(
     conn,
@@ -69,6 +80,7 @@ checkIfProcessed <- function(conn, filename) {
 
 main <- function() {
   args = commandArgs(trailingOnly = TRUE)
+  cat("args are ", args, "length of args is", length(args), "\n")
   argLength = length(args)
   if(argLength != 1)
     cat("usage: Rscript loadToSQLite.R [filename]\n")
