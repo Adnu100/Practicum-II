@@ -9,6 +9,7 @@
 #'
 #' @author Adnesh Dhamangaonkar
 
+source("syntheticDataGeneratorConfiguration.R")
 source("mongodbconstants.R")
 source("dbconstants.R")
 
@@ -37,7 +38,7 @@ unboxRecursive <- function(x) {
 createExpenseReport <- function(employee, approver, transactions, allocations) {
   unboxRecursive(list(
     employee = list(id = employee$ID, name = employee$NAME),
-    approver = approver,
+    approver = list(id = approver$ID, name = approver$NAME),
     reportDate = Sys.Date(),
     status = "Submitted",
     totalAmount = sum(transactions$AMOUNT),
@@ -95,7 +96,6 @@ getEmployeeIdAndName <- function(conn, accountNumber) {
 getEmployeInformation <- function(conn, accountNumber) {
   employee <- getEmployeeIdAndName(conn, accountNumber)
   employeeId <- employee$ID[1]
-  cat("Fetching information for employee ID:", employeeId, "\n")
   projects <- dbGetQuery(
     conn,
     "
@@ -192,7 +192,6 @@ main <- function() {
     cat("usage: Rscript storeExpenseReport.R [accountNumber]\n")
   } else {
     accountNumber <- args[1]
-    approverEmployeeId <- sample(1:10, 1)
     employeeInfo <- getEmployeInformation(conn, accountNumber)
     selectedTransactions <- employeeInfo$transactions[
       sample(nrow(employeeInfo$transactions), sample(5:50, 1), replace = FALSE),
@@ -202,12 +201,13 @@ main <- function() {
     )
     expenseReport <- createExpenseReport(
       employeeInfo$employee,
-      getEmployeeIdAndName(conn, approverEmployeeId),
+      getEmployeeIdAndName(conn, sample(generator.transaction.accounts, 1)),
       selectedTransactions,
       allocations
     )
     mongoConn <- mongo.getConnection()
     mongoConn$insert(expenseReport)
+    cat("Expense report created for employee", employeeInfo$employee$NAME[1], "\n")
   }
 }
 
